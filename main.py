@@ -20,6 +20,8 @@ def times_found(data: bytes, to_find: bytes):
     return found
 
 def split_binary_file(filename: str, to_day: float, sanity=False):
+    if sanity:
+        print("Sanity check only")
     with open(filename, 'rb') as file:
         binary_data = file.read()
 
@@ -83,10 +85,9 @@ def split_binary_file(filename: str, to_day: float, sanity=False):
     print(f"Total size changed from {from_total_size} ({splitted[0][-4:].hex()}) to {accu_size} ({to_total_size.hex()})")
     if sanity:
         assert from_total_size == accu_size, "Sanity check failed, the total size is not the same"
-    else:
         print("Sanity check passed")
         return
-    splitted[0] = splitted[0][-4:] + to_total_size
+    splitted[0] = splitted[0][:-4] + to_total_size
     
     # filename_part = filename.split('/')[-1]
     new_name = f"{filename}.fixed"
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Parse binary file')
     parser.add_argument('filename', type=str, help='Binary file to parse')
     parser.add_argument('--to-day', type=float, help='Set the play time to this day (default 301.0)')
-    parser.add_argument('--sanity', action='store_false', help='Do not replace the play time, only check sanity')
+    parser.add_argument('--sanity', action='store_true', help='Do not replace the play time, only check sanity')
     
     args = parser.parse_args()
     split_binary_file(args.filename, to_day=args.to_day if args.to_day else 100.0, sanity=args.sanity)
