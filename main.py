@@ -1,5 +1,6 @@
 import struct
 import zlib
+import os
 
 GameTime = b'GameTimeMinutes\x00\x00\x0e\x00\x00\x00FloatProperty\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
 HeaderSection = b'\xC1\x83\x2A\x9E\x22\x22\x22\x22\x00\x00\x02\x00\x00\x00\x00\x00\x03\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00'
@@ -94,8 +95,13 @@ def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=Fals
         return
     splitted[0] = splitted[0][:-4] + to_total_size
     
-    # filename_part = filename.split('/')[-1]
-    new_name = f"{filename}.fixed"
+    filename_parts = filename.split('/')
+    filename_parts.insert(-1, "fixes")
+    ptf = filename_parts[:-1]
+    if ptf:
+        os.makedirs("/".join(ptf), exist_ok=True)
+        
+    new_name = "/".join(filename_parts)
     with open(new_name, 'wb') as file:
         file.write(splitter.join(splitted))
         
