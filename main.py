@@ -1,3 +1,4 @@
+from pathlib import Path
 import struct
 import zlib
 import os
@@ -57,16 +58,17 @@ def split_compress(decompressed: bytes, size_limit: int):
     return splitted
 
 def save_data(filename:str, data: bytes):
-    filename_parts = filename.split('/')
+    path = Path(filename)
+    filename_parts = [*path.parts]
     filename_parts.insert(-1, "fixes")
-    ptf = filename_parts[:-1]
+    ptf = path.parts[-1]
     if ptf:
-        os.makedirs("/".join(ptf), exist_ok=True)
+        Path(*filename_parts[:-1]).mkdir(parents=True, exist_ok=True)
         
-    new_name = "/".join(filename_parts)
+    new_name = Path(*filename_parts)
     with open(new_name, 'wb') as file:
         file.write(data)
-    return new_name
+    return str(new_name)
 
 def find_and_replace(name:str, decompressed: bytes, prefix: bytes, format: str, to_day: float, factor: int, offset:int=0, sanity=False, replace_times=1):
     val, found = find_32(decompressed=decompressed, to_find=prefix, format=format)
