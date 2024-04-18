@@ -1,12 +1,12 @@
 import struct
 import zlib
-import base64
 
-to_find = base64.b64decode("R2FtZVRpbWVNaW51dGVzAAAOAAAARmxvYXRQcm9wZXJ0eQAEAAAAAAAAAAA=")
+GameTime = b'GameTimeMinutes\x00\x00\x0e\x00\x00\x00FloatProperty\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
 HeaderSection = b'\xC1\x83\x2A\x9E\x22\x22\x22\x22\x00\x00\x02\x00\x00\x00\x00\x00\x03\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\xFF\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00'
 splitter = HeaderSection[:8]
 skip = len(HeaderSection) - len(splitter)
 magic_num = 41
+size_seek_back = -9
 
 def times_found(data: bytes, to_find: bytes):
     found = 0
@@ -19,7 +19,34 @@ def times_found(data: bytes, to_find: bytes):
         pos += len(to_find)
     return found
 
-def split_binary_file(filename: str, to_day: float, sanity=False):
+def find_float(decompressed: bytes, to_find: bytes):
+    found_pos = decompressed.index(to_find)
+    bytes_found = decompressed[found_pos + len(to_find):][:4]
+    val = struct.unpack('<f', bytes_found)[0]
+    return val, bytes_found
+
+def replace_float(splitted: list[bytes], decompreaable: list[bytes], found:bytes, to_find: bytes, new_float: float, should_replace_times: int, sanity=False):
+    to_time = struct.pack('<f', new_float)
+    to_find_original = to_find + found
+    to_find_to_replace = to_find + to_time
+    
+    replaced = 0
+    for index, part in enumerate(decompreaable, start=1):
+        found = times_found(part, to_find_original)
+        if found > 0:
+            if sanity: 
+                replaced_decoded = part
+            else:
+                replaced_decoded = part.replace(to_find_original, to_find_to_replace)
+            encoded = zlib.compress(replaced_decoded)
+            size = struct.pack('<H', len(encoded))
+            assert len(size) == 2
+            section = HeaderSection.replace(b'\xFF\xFF', size)[len(splitter):] + zlib.compress(replaced_decoded)
+            splitted[index] = section
+            replaced += found
+    assert replaced == should_replace_times, f"Fail to fix the file, please try resave it. (replaced {replaced} times)"
+    
+def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=False):
     if sanity:
         print("Sanity check only")
     with open(filename, 'rb') as file:
@@ -45,41 +72,19 @@ def split_binary_file(filename: str, to_day: float, sanity=False):
     # print(f"Total file size = {sum} bytes, count = {len(decompreaable)}")
     decompressed = b''.join(decompreaable)
     
-    # with open(f"{filename}.decompressed.bin", 'wb') as file:
-    #     file.write(decompressed)
+    if write_raw:
+        with open(f"{filename}.bin", 'wb') as file:
+            file.write(decompressed)
     
-    found_pos = decompressed.index(to_find)
-    time_found = decompressed[found_pos + len(to_find):][:4]
-    time = struct.unpack('<f', time_found)[0]
+    time, time_found = find_float(decompressed=decompressed, to_find=GameTime)
+    print(f"Found play time {time/1440/7} ({time_found.hex()}) weeks") 
+    assert times_found(decompressed, GameTime + time_found) == 3
     
-    print(f"Found play time {time/1440/7} weeks") 
-    
-    to_find_original = to_find + time_found
-    
-    assert times_found(decompressed, to_find_original) == 3
-    
-    to_time = struct.pack('<f', to_day * 1440 * 7)
-    to_find_to_replace = to_find + to_time
-    
-    replaced = 0
-    for index, part in enumerate(decompreaable, start=1):
-        found = times_found(part, to_find_original)
-        if found > 0:
-            if sanity: 
-                replaced_decoded = part
-            else:
-                replaced_decoded = part.replace(to_find_original, to_find_to_replace)
-            encoded = zlib.compress(replaced_decoded)
-            size = struct.pack('<H', len(encoded))
-            assert len(size) == 2
-            section = HeaderSection.replace(b'\xFF\xFF', size)[len(splitter):] + zlib.compress(replaced_decoded)
-            splitted[index] = section
-            replaced += found
+    replace_float(splitted=splitted, decompreaable=decompreaable, found=time_found, to_find=GameTime,  new_float=to_day * 1440 * 7, should_replace_times=3, sanity=sanity)
 
     # + len(splitter) for splitter
     accu_size = sum([len(part) + len(splitter) for part in splitted[1:]])
     
-    assert replaced == 3, f"Fail to fix the file, please try resave it. (replaced {replaced} times)"
     from_total_size = struct.unpack('<I', splitted[0][-4:])[0]
     to_total_size = struct.pack('<I', accu_size)
     print(f"Total size changed from {from_total_size} ({splitted[0][-4:].hex()}) to {accu_size} ({to_total_size.hex()})")
