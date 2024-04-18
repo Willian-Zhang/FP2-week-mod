@@ -2,7 +2,9 @@ import struct
 import zlib
 import os
 
-GameTime = b'GameTimeMinutes\x00\x00\x0e\x00\x00\x00FloatProperty\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+GameTime    = b'GameTimeMinutes\x00\x00\x0e\x00\x00\x00FloatProperty\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+TicksPassed = b'TicksPassedCount\x00\x00\x0f\x00\x00\x00UInt32Property\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+
 HeaderSection = b'\xC1\x83\x2A\x9E\x22\x22\x22\x22\x00\x00\x02\x00\x00\x00\x00\x00\x03\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xEE\xEE\xEE\xEE\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xEE\xEE\xEE\xEE\x00\x00\x00\x00'
 splitter = HeaderSection[:8]
 skip = len(HeaderSection) - len(splitter)
@@ -20,16 +22,16 @@ def times_found(data: bytes, to_find: bytes):
         pos += len(to_find)
     return found
 
-def find_float(decompressed: bytes, to_find: bytes):
+def find_32(decompressed: bytes, to_find: bytes, format='<f'):
     found_pos = decompressed.index(to_find)
     bytes_found = decompressed[found_pos + len(to_find):][:4]
-    val = struct.unpack('<f', bytes_found)[0]
+    val = struct.unpack(format, bytes_found)[0]
     return val, bytes_found
 
-def replace_float(decompressed: bytes, to_find: bytes, found:bytes,new_float: float, should_replace_times: int, sanity=False):
-    to_time = struct.pack('<f', new_float)
+def replace_32(decompressed: bytes, to_find: bytes, found:bytes, new_val: float|int, should_replace_times: int, sanity=False, format='<f'):
+    to_bytes = struct.pack(format, new_val)
     to_find_original = to_find + found
-    to_find_to_replace = to_find + to_time
+    to_find_to_replace = to_find + to_bytes
     
     assert times_found(decompressed, to_find_original) == should_replace_times, f"Fail to find the play time, please try resave it. (found {times_found(decompressed, to_find_original)} times)"
     if sanity:
@@ -97,11 +99,19 @@ def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=Fals
         with open(f"{filename}.bin", 'wb') as file:
             file.write(decompressed)
     
-    time, time_found = find_float(decompressed=decompressed, to_find=GameTime)
-    print(f"Found play time {time/1440/7} ({time_found.hex()}) weeks") 
+    # GameTime
+    time, time_found = find_32(decompressed=decompressed, to_find=GameTime, format='<f')
+    print(f"Found play time {time/1440/7} weeks ({time_found.hex()})") 
     assert times_found(decompressed, GameTime + time_found) == 3
+    decompressed = replace_32(decompressed=decompressed, to_find=GameTime, found=time_found, new_val=to_day * 1440 * 7, should_replace_times=3, sanity=sanity, format='<f')
     
-    decompressed = replace_float(decompressed=decompressed, to_find=GameTime, found=time_found, new_float=to_day * 1440 * 7, should_replace_times=3, sanity=sanity)
+    # TicksPassed
+    ticks, ticks_found = find_32(decompressed=decompressed, to_find=TicksPassed, format='<I')
+    print(f"Found ticks passed {ticks/1440} weeks ({ticks_found.hex()})")
+    assert times_found(decompressed, TicksPassed + ticks_found) == 1
+    decompressed = replace_32(decompressed=decompressed, to_find=TicksPassed, found=ticks_found, new_val=int(to_day * 1440), should_replace_times=1, sanity=sanity, format='<I')
+    
+    
     new_splits = split_compress(decompressed, size_limit=size_limit)
     splitted = [header] + new_splits
     accu_size = sum([len(part) for part in new_splits])
@@ -118,9 +128,6 @@ def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=Fals
     new_name = save_data(filename, b''.join(splitted))
     print(f"Fixed file saved as {new_name}, you may replace the origianl file with it (Always make a backup first!)")
     
-
-
-
 if __name__ == "__main__":
     import argparse
 
