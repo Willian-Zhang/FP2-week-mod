@@ -4,6 +4,9 @@ import os
 
 GameTime    = b'GameTimeMinutes\x00\x00\x0e\x00\x00\x00FloatProperty\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
 TicksPassed = b'TicksPassedCount\x00\x00\x0f\x00\x00\x00UInt32Property\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+LogicTicks  = b'LogicTicksPassedCount\x00\x1f\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+# BetaTimeout = b'BETA TIMEOUT\x00\x02 \x00\x00\x00\x00\x00\x00\x00\x00\x0b\x00\x00\x00PXGameTime\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x00\x00\x00ScaledTicks\x00\x13\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+CurrentGameTime = b'currentGameTime\x00\x00\x0f\x00\x00\x00StructProperty\x009\x00\x00\x00\x00\x00\x00\x00\x00\x0b\x00\x00\x00PXGameTime\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0c\x00\x00\x00ScaledTicks\x00\x00\x0c\x00\x00\x00IntProperty\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00'
 
 HeaderSection = b'\xC1\x83\x2A\x9E\x22\x22\x22\x22\x00\x00\x02\x00\x00\x00\x00\x00\x03\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xEE\xEE\xEE\xEE\x00\x00\x00\x00\xFF\xFF\xFF\xFF\x00\x00\x00\x00\xEE\xEE\xEE\xEE\x00\x00\x00\x00'
 splitter = HeaderSection[:8]
@@ -65,6 +68,14 @@ def save_data(filename:str, data: bytes):
         file.write(data)
     return new_name
 
+def find_and_replace(name:str, decompressed: bytes, prefix: bytes, format: str, to_day: float, factor: int, offset:int=0, sanity=False, replace_times=1):
+    val, found = find_32(decompressed=decompressed, to_find=prefix, format=format)
+    print(f"Found {name} {val/factor+offset} weeks ({found.hex()})")
+    new_val = (to_day - offset) * factor 
+    if format[-1] in ['I']:
+        new_val = int(new_val)
+    return replace_32(decompressed=decompressed, to_find=prefix, found=found, new_val=new_val, should_replace_times=replace_times, sanity=sanity, format=format)
+
 def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=False):
     if sanity:
         print("Sanity check only")
@@ -98,20 +109,16 @@ def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=Fals
     if write_raw:
         with open(f"{filename}.bin", 'wb') as file:
             file.write(decompressed)
+        
+    decompressed = find_and_replace('GameTime', decompressed=decompressed, prefix=GameTime, format='<f', to_day=to_day, factor=60*24*7, sanity=sanity, replace_times=3)
+    decompressed = find_and_replace('TicksPassed', decompressed=decompressed, prefix=TicksPassed, format='<I', to_day=to_day, factor=60*24, sanity=sanity)
+    decompressed = find_and_replace('LogicTicks', decompressed=decompressed, prefix=LogicTicks, format='<I', to_day=to_day, factor=24, offset=1, sanity=sanity)
+    # decompressed = find_and_replace('BetaTimeout', decompressed=decompressed, prefix=BetaTimeout, format='<I', to_day=300*16, factor=24*7*10, sanity=sanity)    
+    decompressed = find_and_replace('CurrentGameTime', decompressed=decompressed, prefix=CurrentGameTime, format='<I', to_day=to_day, factor=7*24*10, sanity=sanity, replace_times=1)
     
-    # GameTime
-    time, time_found = find_32(decompressed=decompressed, to_find=GameTime, format='<f')
-    print(f"Found play time {time/1440/7} weeks ({time_found.hex()})") 
-    assert times_found(decompressed, GameTime + time_found) == 3
-    decompressed = replace_32(decompressed=decompressed, to_find=GameTime, found=time_found, new_val=to_day * 1440 * 7, should_replace_times=3, sanity=sanity, format='<f')
-    
-    # TicksPassed
-    ticks, ticks_found = find_32(decompressed=decompressed, to_find=TicksPassed, format='<I')
-    print(f"Found ticks passed {ticks/1440} weeks ({ticks_found.hex()})")
-    assert times_found(decompressed, TicksPassed + ticks_found) == 1
-    decompressed = replace_32(decompressed=decompressed, to_find=TicksPassed, found=ticks_found, new_val=int(to_day * 1440), should_replace_times=1, sanity=sanity, format='<I')
-    
-    
+    if write_raw:
+        save_data(f"{filename}.bin", decompressed)
+            
     new_splits = split_compress(decompressed, size_limit=size_limit)
     splitted = [header] + new_splits
     accu_size = sum([len(part) for part in new_splits])
@@ -135,6 +142,7 @@ if __name__ == "__main__":
     parser.add_argument('filename', type=str, help='Binary file to parse')
     parser.add_argument('--to-day', type=float, help='Set the play time to this day (default 301.0)')
     parser.add_argument('--sanity', action='store_true', help='Do not replace the play time, only check sanity')
+    parser.add_argument('--write-raw', action='store_true', help='Write the raw decompressed data to a file')
     
     args = parser.parse_args()
-    split_binary_file(args.filename, to_day=args.to_day if args.to_day else 100.0, sanity=args.sanity)
+    split_binary_file(args.filename, to_day=args.to_day if args.to_day else 100.0, sanity=args.sanity, write_raw=args.write_raw)
