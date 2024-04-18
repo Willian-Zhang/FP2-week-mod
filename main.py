@@ -72,7 +72,7 @@ def find_and_replace(name:str, decompressed: bytes, prefix: bytes, format: str, 
     val, found = find_32(decompressed=decompressed, to_find=prefix, format=format)
     print(f"Found {name} {val/factor+offset} weeks ({found.hex()})")
     new_val = (to_day - offset) * factor 
-    if format[-1] in ['I']:
+    if format[-1].upper() in ['I', 'H', 'L', 'Q']:
         new_val = int(new_val)
     return replace_32(decompressed=decompressed, to_find=prefix, found=found, new_val=new_val, should_replace_times=replace_times, sanity=sanity, format=format)
 
@@ -110,11 +110,11 @@ def split_binary_file(filename: str, to_day: float, sanity=False, write_raw=Fals
         with open(f"{filename}.bin", 'wb') as file:
             file.write(decompressed)
         
-    decompressed = find_and_replace('GameTime', decompressed=decompressed, prefix=GameTime, format='<f', to_day=to_day, factor=60*24*7, sanity=sanity, replace_times=3)
-    decompressed = find_and_replace('TicksPassed', decompressed=decompressed, prefix=TicksPassed, format='<I', to_day=to_day, factor=60*24, sanity=sanity)
-    decompressed = find_and_replace('LogicTicks', decompressed=decompressed, prefix=LogicTicks, format='<I', to_day=to_day, factor=24, offset=1, sanity=sanity)
+    # decompressed = find_and_replace('GameTime', decompressed=decompressed, prefix=GameTime, format='<f', to_day=to_day, factor=60*24*7, sanity=sanity, replace_times=3)
+    # decompressed = find_and_replace('TicksPassed', decompressed=decompressed, prefix=TicksPassed, format='<I', to_day=to_day, factor=60*24, sanity=sanity)
+    # decompressed = find_and_replace('LogicTicks', decompressed=decompressed, prefix=LogicTicks, format='<I', to_day=to_day, factor=24, offset=1, sanity=sanity)
     # decompressed = find_and_replace('BetaTimeout', decompressed=decompressed, prefix=BetaTimeout, format='<I', to_day=300*16, factor=24*7*10, sanity=sanity)    
-    decompressed = find_and_replace('CurrentGameTime', decompressed=decompressed, prefix=CurrentGameTime, format='<I', to_day=to_day, factor=7*24*10, sanity=sanity, replace_times=1)
+    decompressed = find_and_replace('CurrentGameTime', decompressed=decompressed, prefix=CurrentGameTime, format='<i', to_day=to_day, factor=7*24*10, sanity=sanity, replace_times=1)
     
     if write_raw:
         save_data(f"{filename}.bin", decompressed)
@@ -140,9 +140,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Parse binary file')
     parser.add_argument('filename', type=str, help='Binary file to parse')
-    parser.add_argument('--to-day', type=float, help='Set the play time to this day (default 301.0)')
+    parser.add_argument('--to-day', type=float, help='Set the play time to this day (in weeks)')
     parser.add_argument('--sanity', action='store_true', help='Do not replace the play time, only check sanity')
     parser.add_argument('--write-raw', action='store_true', help='Write the raw decompressed data to a file')
     
     args = parser.parse_args()
-    split_binary_file(args.filename, to_day=args.to_day if args.to_day else 100.0, sanity=args.sanity, write_raw=args.write_raw)
+    split_binary_file(args.filename, to_day=args.to_day if args.to_day else -10000.0, sanity=args.sanity, write_raw=args.write_raw)
